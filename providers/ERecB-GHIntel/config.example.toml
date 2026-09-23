@@ -1,0 +1,87 @@
+version = 1
+
+[paths]
+# `ghintel scan --target-dir PATH` replaces this with PATH's normalized absolute path.
+input_dir = "in"
+db_dir = "dbs"
+output_dir = "output"
+
+[scan]
+duplicate_policy = "reuse"
+follow_symlinks = false
+max_document_bytes = 1048576
+max_source_bytes_per_repo = 4194304
+force_llm_on_unchanged = false
+
+[github]
+token_env = "GITHUB_TOKEN"
+offline = false
+concurrency = 4
+cache_ttl_hours = 24
+max_retries = 5
+timeout_seconds = 30
+
+[gemini]
+enabled = false
+api_key_env = "GEMINI_API_KEY"
+model = "gemini-3.8-flash"
+concurrency = 1
+timeout_seconds = 90
+max_retries = 3
+max_output_tokens_per_request = 4096
+allow_source_upload = true
+
+[anthropic]
+enabled = true
+api_key_env = "ANTHROPIC_API_KEY"
+model = "claude-sonnet-4-6"
+concurrency = 1
+timeout_seconds = 90
+max_retries = 3
+max_output_tokens_per_request = 4096
+allow_source_upload = true
+
+[enrichment]
+# Select "anthropic" for Claude, "gemini" for Gemini, or "ollama" for a local Ollama endpoint.
+provider = "anthropic"
+
+[ollama]
+enabled = false
+endpoint = "http://127.0.0.1:11434"
+model = "gpt-oss:120b"
+concurrency = 1
+timeout_seconds = 300
+max_retries = 1
+max_output_tokens_per_request = 4096
+allow_source_upload = true
+thinking = "low"
+
+[budgets]
+max_gemini_requests_per_run = 100
+max_input_tokens_per_run = 500000
+max_output_tokens_per_run = 100000
+max_cost_usd_per_run = 10.0
+max_repositories_enriched_per_run = 100
+
+[language]
+minimum_letters = 100
+minimum_script_ratio = 0.20
+gemini_fallback = true
+allowed_categories = [
+  "Chinese", "Russian", "Slavic-other", "Korean", "Japanese",
+  "Arabic", "Hebrew", "Hindi", "English", "Unknown",
+]
+
+[pricing.gemini]
+input_usd_per_million_tokens = 0.0
+output_usd_per_million_tokens = 0.0
+
+[pricing.anthropic]
+# Prices are deliberately operator-supplied, because provider prices can change.
+input_usd_per_million_tokens = 0.0
+output_usd_per_million_tokens = 0.0
+
+[pricing.ollama]
+# Local inference is unbilled by Ollama; rates remain zero.
+input_usd_per_million_tokens = 0.0
+output_usd_per_million_tokens = 0.0

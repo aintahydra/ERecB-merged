@@ -1,0 +1,34 @@
+# Offline YaraRuler compiled-cache profile. Install with: pip install -e '.[yara]'.
+watch:
+  path: "./in"
+  recursive: false
+dispatcher:
+  max_workers: 1
+  duplicate_policy: "skip_if_output_exists"
+  staging_index_path: "./data/staging.sqlite3"
+  staging_root: "./middle-earth"
+  output_root: "./output"
+pipelines:
+  on_added:
+    preprocessors:
+      processors:
+        - "stage_input"
+    analysis:
+      processors:
+        - "yara_scan"
+processors:
+  yara_scan:
+    type: "yara_scan"
+    cache_dir: "./rules/cache"
+    output_root: "./output"
+    selector: "exec-only"
+    max_depth_from_staged_root: null
+    max_file_size_bytes: null
+    follow_symlinks: false
+    include_hidden_files: true
+    include_hidden_directories: true
+    threads: 1
+    timeout_seconds: 30
+    include_strings: false
+    max_string_instances_per_rule: 32
+    report_suffix: "-yara.md"

@@ -1,0 +1,38 @@
+# IPRetriever-only pipeline. Relative paths resolve from the command's working directory.
+watch:
+  path: "./in"
+  recursive: false
+  event_debounce_ms: 500
+  stable_check:
+    enabled: true
+    interval_ms: 250
+    unchanged_checks: 3
+
+dispatcher:
+  max_workers: 1
+  duplicate_policy: "skip_if_output_exists"
+  staging_index_path: "./data/staging.sqlite3"
+  staging_root: "./middle-earth"
+  output_root: "./output"
+
+pipelines:
+  on_added:
+    preprocessors:
+      processors:
+        - "stage_input"
+    analysis:
+      processors:
+        - "ip_retriever"
+
+processors:
+  ip_retriever:
+    type: "ip_retriever"
+    db_path: "./dbs/ipintel.sqlite3"
+    output_root: "./output"
+    chunk_size_bytes: 1048576
+    chunk_overlap_bytes: 256
+    max_file_size_bytes: null
+    follow_symlinks: false
+    include_hidden_files: true
+    include_hidden_directories: true
+    report_suffix: "-ipintel.md"

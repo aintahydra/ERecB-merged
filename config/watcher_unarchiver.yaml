@@ -1,0 +1,35 @@
+watch:
+  path: "./in"
+  recursive: false
+  event_debounce_ms: 500
+  stable_check:
+    enabled: true
+    interval_ms: 250
+    unchanged_checks: 3
+
+dispatcher:
+  max_workers: 1
+  duplicate_policy: "skip_if_output_exists"
+
+pipelines:
+  on_added:
+    preprocessors:
+      processors:
+        - "stage_input"
+
+processors:
+  unarchive_all_supported:
+    type: "archive_unarchiver"
+    output_root: "./middle-earth"
+    max_depth_from_event_root: 2
+    filename_regex: ".*\\.(zip|enc|en_dec|tar\\.gz)$"
+    supported_formats:
+      - ".zip"
+      - ".enc"
+      - ".en_dec"
+      - ".tar.gz"
+    # 100 GiB archive / 200 GiB extracted-data capacity envelope.
+    max_archive_size_bytes: 107374182400
+    max_total_extracted_bytes_per_archive: 214748364800
+    max_extracted_files_per_archive: 200000
+    overwrite: false

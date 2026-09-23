@@ -1,0 +1,25 @@
+# Local configuration and credentials
+.env
+gh-token.txt
+config.toml
+
+# Supplied investigation corpus and excluded material
+/in/
+/do_not_read/
+/askings.md
+
+# Runtime data
+dbs/
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

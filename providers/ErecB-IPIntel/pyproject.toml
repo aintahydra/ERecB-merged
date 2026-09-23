@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "erecb-ipintel"
+version = "0.1.1"
+description = "Collect IP addresses from files and enrich them with threat intelligence."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+yaml = ["PyYAML>=6"]
+
+[project.scripts]
+erecb-ipintel = "erecb_ipintel.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

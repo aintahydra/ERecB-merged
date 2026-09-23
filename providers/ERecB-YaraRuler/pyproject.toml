@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "yararuler"
+version = "0.1.1"
+description = "Passive, repository-backed YARA threat artifact scanner"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  "pydantic>=2.7,<3",
+  "typer>=0.12,<1",
+  "yara-python>=4.3,<5",
+]
+
+[project.optional-dependencies]
+magic = ["python-magic>=0.4.27,<1"]
+dev = ["pytest>=8,<9", "pytest-cov>=5,<7"]
+
+[project.scripts]
+yararuler = "yararuler.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/yararuler"]
+
+[tool.hatch.build]
+exclude = [
+  "/askings.md",
+  "/gh-token.txt",
+  "/dist",
+  "/.pytest_cache",
+  "/.ruff_cache",
+  "**/__pycache__",
+  "**/*.pyc",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,29 @@
+[paths]
+input_root = "in"
+output_root = "output"
+db_path = "dbs/ipintel.sqlite3"
+
+[discovery]
+recognition_depth = 1
+follow_symlinks = false
+watch_interval_seconds = 60
+retry_failed_directories = false
+
+[extraction]
+chunk_size_bytes = 1048576
+chunk_overlap_bytes = 256
+# max_file_size_bytes = 104857600
+include_hidden_files = true
+include_hidden_directories = true
+
+[database]
+store_raw_provider_json = true
+
+[providers.ctx_io]
+enabled = true
+base_url = "https://api.ctx.io/v1"
+# Prefer CTX_IO_API_KEY or ctx_io_api_key.txt for local secrets.
+# api_key = ""
+timeout_seconds = 30
+retry_count = 3
+retry_backoff_seconds = 2

@@ -1,0 +1,28 @@
+[paths]
+rules_dir = "rules"
+target_dir = "in"
+
+[rules]
+cache_dir = "rules/cache"
+quarantine_dir = "rules/quarantine"
+
+[[rules.sources]]
+name = "community-rules"
+url = "https://github.com/Yara-Rules/rules.git"
+enabled = true
+
+[scan]
+threads = 1
+timeout_seconds = 30
+default_selector = "exec-only"
+follow_symlinks = false
+include_strings = false
+max_file_size_bytes = 0
+
+[report]
+format = "json"
+output = "report.json"
+pretty_json = true
+
+[logging]
+level = "INFO"

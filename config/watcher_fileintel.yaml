@@ -1,0 +1,42 @@
+# FileRetriever-only pipeline. Relative paths resolve from the command's working directory.
+watch:
+  path: "./in"
+  recursive: false
+  event_debounce_ms: 500
+  stable_check:
+    enabled: true
+    interval_ms: 250
+    unchanged_checks: 3
+
+dispatcher:
+  max_workers: 1
+  duplicate_policy: "skip_if_output_exists"
+  staging_index_path: "./data/staging.sqlite3"
+  staging_root: "./middle-earth"
+  output_root: "./output"
+
+pipelines:
+  on_added:
+    preprocessors:
+      processors:
+        - "stage_input"
+    analysis:
+      processors:
+        - "file_retriever"
+
+processors:
+  file_retriever:
+    type: "file_retriever"
+    db_path: "./dbs/fileintel.sqlite3"
+    output_root: "./output"
+    max_depth_from_staged_root: null
+    max_file_size_bytes: null
+    hash_block_size_bytes: 1048576
+    follow_symlinks: false
+    include_hidden_files: true
+    include_hidden_directories: true
+    classifier:
+      # Extension-only mode runs without optional libmagic/python-magic packages.
+      use_magic: false
+      extension_fallback: true
+    report_suffix: "-fileintel.md"

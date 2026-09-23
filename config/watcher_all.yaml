@@ -1,0 +1,81 @@
+# Canonical offline four-adapter triage profile.  Install the YARA extra before use:
+# pip install -e '.[yara]'.  Rule-cache updates remain a separate producer operation.
+watch:
+  path: "./in"
+  recursive: false
+  event_debounce_ms: 500
+  stable_check:
+    enabled: true
+    interval_ms: 250
+    unchanged_checks: 3
+
+logging:
+  level: "INFO"
+  file_path: "./logs/erecb-triage.log"
+  max_bytes: 10485760
+  backup_count: 10
+
+dispatcher:
+  max_workers: 1
+  duplicate_policy: "skip_if_output_exists"
+  staging_index_path: "./data/staging.sqlite3"
+  staging_root: "./middle-earth"
+  output_root: "./output"
+  publish_summary: true
+
+pipelines:
+  on_added:
+    preprocessors:
+      processors:
+        - "stage_input"
+        - "artifact_inventory"
+    analysis:
+      processors:
+        - "ip_retriever"
+        - "file_retriever"
+        - "ghintel"
+        - "yara_scan"
+
+processors:
+  # Explicit so this copied profile keeps its large-capture envelope even when
+  # it is used with an older installed base package.
+  unarchive_all_supported:
+    max_archive_size_bytes: 107374182400
+    max_total_extracted_bytes_per_archive: 214748364800
+    max_extracted_files_per_archive: 200000
+  artifact_inventory:
+    max_entries: 200000
+  ip_retriever:
+    type: "ip_retriever"
+    db_path: "./dbs/ipintel.sqlite3"
+    output_root: "./output"
+    ip_singularity_threshold: 20
+    max_observations_per_file: 1024
+    max_observations_per_capture: 10000
+    report_suffix: "-ipintel.md"
+  file_retriever:
+    type: "file_retriever"
+    db_path: "./dbs/fileintel.sqlite3"
+    output_root: "./output"
+    classifier:
+      use_magic: false
+      extension_fallback: true
+    report_suffix: "-fileintel.md"
+  ghintel:
+    type: "ghintel"
+    db_path: "./dbs/ghintel.sqlite3"
+    output_root: "./output"
+    report_suffix: "-ghintel.md"
+  yara_scan:
+    type: "yara_scan"
+    cache_dir: "./rules/cache"
+    output_root: "./output"
+    selector: "exec-only"
+    follow_symlinks: false
+    include_hidden_files: true
+    include_hidden_directories: true
+    threads: 1
+    timeout_seconds: 30
+    include_strings: false
+    max_string_instances_per_rule: 32
+    report_suffix: "-yara.md"

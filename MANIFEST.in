@@ -1,0 +1,6 @@
+include README.md
+include config/*.yaml
+recursive-include design *.md
+recursive-include docs *.md
+recursive-include testdata *
+recursive-include tests *.py

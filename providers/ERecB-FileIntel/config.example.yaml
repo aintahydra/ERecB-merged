@@ -1,0 +1,25 @@
+input_dir: in
+watch_depth: 1
+watch_interval_seconds: 10
+database_path: dbs/fileintel.sqlite3
+log_level: INFO
+
+scan:
+  follow_symlinks: false
+  max_file_size_bytes: null
+  hash_block_size_bytes: 1048576
+
+enrichment:
+  enabled_providers:
+    - ctx_io
+  provider_timeout_seconds: 30
+  provider_retry_count: 2
+  store_raw_responses: false
+  raw_response_dir: data/provider_raw
+  requery_success_after_days: null
+  requery_failure_after_hours: 24
+
+providers:
+  ctx_io:
+    api_key_path: ctx_io_api_key.txt
+    base_url: https://api.ctx.io/v1

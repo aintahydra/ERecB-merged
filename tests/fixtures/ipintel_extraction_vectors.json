@@ -1,0 +1,4 @@
+[
+  {"content": "198.51.100.7", "expected": ["198.51.100.7"]},
+  {"content": "not-an-address", "expected": []}
+]
