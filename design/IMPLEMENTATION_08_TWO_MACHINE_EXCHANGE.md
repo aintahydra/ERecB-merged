@@ -1,11 +1,10 @@
 # Phase 08: Two-machine intelligence exchange
 
-Status: **implementation in progress**. The air-gap request/replay path, provider queues,
-provider-owned merge commands, verified snapshots, YARA cache transfer, maintenance import,
-and connected/air-gap role guards are implemented with focused tests. The provider-network
-rehearsal and full release gate in section 7 remain open. The root triage CLI and provider
-CLIs now check the selected role before commands that enrich, snapshot, merge, or activate a
-cache. This phase follows the offline triage baseline in
+Status: **implementation substantially complete; release rehearsal remains**. The air-gap
+request/replay path, provider queues, provider-owned merge commands, verified snapshots, YARA
+cache transfer, maintenance import, and connected/air-gap role guards are implemented with
+focused tests. The root triage CLI and provider CLIs check the selected role before commands
+that enrich, snapshot, merge, or activate a cache. This phase follows the offline triage baseline in
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). It covers an air-gapped capture machine and
 an Internet-connected enrichment machine running the same merged source tree. The two roles are
 explicit operating modes; capture analysis stays offline on either machine.
@@ -14,18 +13,36 @@ Current verification: the snapshot/mode regression tests pass (8), FileIntel tes
 IPIntel tests pass (16), and the GHIntel snapshot tests pass. The broader root suite has 61
 passing tests; 7 tests that require repository-local `dbs/*.sqlite3` fail because those files
 are on the remote test host, not this checkout. A database-independent selection passes (59).
-All changed sources compile and `git diff --check` passes. The original capture was staged and
-analyzed; both request selections exported; report
+All changed sources compile and `git diff --check` passes. The real input capture was staged
+and analyzed; missing-only and all-indicator request bundles were exported; on-demand report
 replay succeeded for IPIntel/FileIntel/GHIntel. On `192.168.56.110`, all three supplied DBs
-passed SQLite quick-check and the read-only triage readiness check passed. The real request
-bundles imported into isolated provider homework queues (143 files, 26 IPs, 132 repositories),
-duplicate imports were no-ops, and the all-indicators bundle added 40 IPs and 1 repository.
-Snapshots for all three databases were created and verified, including the 1.03 GB IPIntel
-database. A compatible existing YARA cache was exported/imported and readiness then reported
-the cache active. Live provider enrichment and physical transfer between separate machines
-have not yet been run. The initial GHIntel snapshot smoke test initialized its supplied test
-DB; the snapshot command is now strictly read-only, verified on a separate DB copy by matching
-its SHA-256 before and after.
+passed SQLite quick-check and the read-only triage readiness check passed. In isolated remote
+state, the real request bundles imported into provider homework queues (143 files, 26 IPs, 132
+repositories), duplicate imports were no-ops, and the all-indicators bundle added 40 IPs and 1
+repository. Snapshots for all three databases were created and verified, including the 1.03 GB
+IPIntel database. A compatible existing YARA cache was exported/imported and readiness then
+reported the cache active. Live provider enrichment, applying returned DB snapshots to the
+air-gap DBs, and physical transfer between separate machines have not yet been run. The initial
+GHIntel snapshot smoke test initialized its supplied test DB; the snapshot command is now
+strictly read-only, verified on a separate DB copy by matching its SHA-256 before and after.
+
+## Current implementation handoff
+
+| Area | Current state | Remaining validation |
+| --- | --- | --- |
+| Air-gap capture and reports | Configurable file scope/depth, local DB/cache reports, report replay while the verified staged capture remains available | Full acceptance against the target capture with all four reports, including YARA result comparison |
+| Request exchange | Indicator-only, checksummed missing/all bundles; validation and duplicate-safe imports | Physical removable-media transfer and operator acceptance of error/truncation reporting |
+| Provider homework | Separate provider queues with import/list/run commands, request history, newest-first scheduling, retryable no-result handling | Run real provider enrichment against a small approved sample; exercise provider rate-limit/error/retry cases |
+| DB return path | Provider-owned snapshot/verify/merge commands and air-gap maintenance import; remote snapshots verified | Perform a controlled merge on copies of the supplied operational DBs, then repeat import and verify no-op/idempotence, rollback, and local-record preservation |
+| YARA exchange | Conditional generation behavior and checksummed compatible cache export/import; remote cache became active after import | Compare reports on both machines and verify rejection/rollback for deliberately incompatible or corrupt cache input |
+| Release/deployment | Role profiles, command guards, and operator runbook exist | Full two-machine rehearsal; offline software upgrade/schema compatibility procedure; run the full test suite on a checkout with the operational DB fixtures available |
+
+No live provider requests or updates to the supplied operational databases were performed in
+the remote rehearsal. The initial GHIntel snapshot smoke test used a supplied test copy but an
+older CLI path initialized that copy (16 KiB growth); its migration-table row count remained
+unchanged and SQLite integrity passed. The later read-only snapshot implementation was verified
+against a separate copy by matching its SHA-256 before and after. No restoration or overwrite
+was attempted.
 
 ## 1. Confirmed operating contract
 
@@ -59,7 +76,12 @@ import and database verification do not need network access; `homework run` and 
 synchronization require the connected profile. Queue import belongs to the connected profile
 but must itself remain offline. Reject a command/profile mismatch before I/O.
 
-## 2. Current-state audit and inconsistencies to resolve
+## 2. Original pre-implementation audit (historical)
+
+The gap descriptions in this section record the audit before Phase 08 implementation; do not
+read them as the current feature inventory. Use the current handoff table above for what is
+implemented and what still needs acceptance testing. The contracts and constraints below remain
+the design basis for the implementation.
 
 | Component | Reusable capability | Gap for this workflow |
 | --- | --- | --- |
