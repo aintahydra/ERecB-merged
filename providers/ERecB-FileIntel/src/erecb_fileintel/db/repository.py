@@ -119,6 +119,32 @@ class Repository:
             )
         return file_id
 
+    def upsert_hash_only(self, sha256_hash: str, md5_hash: str | None) -> FileForEnrichment:
+        """Persist a transfer indicator without inventing a scan job or captured path."""
+        sha256_hash = normalize_hash(sha256_hash)
+        md5_hash = normalize_hash(md5_hash)
+        if sha256_hash is None or len(sha256_hash) != 64:
+            raise ValueError("a canonical SHA-256 is required")
+        if md5_hash is not None and len(md5_hash) != 32:
+            raise ValueError("MD5 must be canonical when supplied")
+        now = utc_now()
+        with self.conn:
+            row = self.conn.execute("SELECT id, md5_hash FROM files WHERE sha256_hash = ?", (sha256_hash,)).fetchone()
+            if row is None:
+                cursor = self.conn.execute(
+                    "INSERT INTO files(sha256_hash, md5_hash, malicious, created_at, updated_at) "
+                    "VALUES (?, ?, 'unknown', ?, ?)", (sha256_hash, md5_hash, now, now),
+                )
+                file_id = int(cursor.lastrowid)
+            else:
+                file_id = int(row["id"])
+                if row["md5_hash"] and md5_hash and row["md5_hash"] != md5_hash:
+                    raise ValueError("MD5 conflicts with existing SHA-256 entity")
+                if md5_hash and not row["md5_hash"]:
+                    self.conn.execute("UPDATE files SET md5_hash = ?, updated_at = ? WHERE id = ?",
+                                      (md5_hash, now, file_id))
+        return FileForEnrichment(file_id, sha256_hash, md5_hash or (row["md5_hash"] if row else None))
+
     def get_files_for_enrichment(self, scan_job_id: int) -> list[FileForEnrichment]:
         rows = self.conn.execute(
             """
@@ -272,4 +298,3 @@ class Repository:
         tags = self.conn.execute("SELECT COUNT(*) AS c FROM tags").fetchone()["c"]
         scans = self.conn.execute("SELECT COUNT(*) AS c FROM scan_jobs").fetchone()["c"]
         return {"files": files, "malicious": malicious, "tags": tags, "scans": scans}
-

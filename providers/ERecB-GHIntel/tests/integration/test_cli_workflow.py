@@ -7,14 +7,17 @@ import ghintel.cli as cli
 from ghintel.cli import app
 from ghintel.config import load_config
 
+ROOT = Path(__file__).parents[4]
+
 
 def _run(runner: CliRunner, arguments: list[str]) -> str:
-    result = runner.invoke(app, arguments)
+    result = runner.invoke(app, arguments,
+                          env={"ERECB_MODE_PROFILE": str(ROOT / "config/connected.yaml")})
     assert result.exit_code == 0, result.output
     return result.output
 
 
-def test_offline_cli_inventory_workflow(tmp_path: Path) -> None:
+def test_offline_cli_inventory_workflow(tmp_path: Path, monkeypatch) -> None:
     """An investigator can create, query, export, and snapshot a local inventory."""
     runner = CliRunner()
     config = tmp_path / "config.toml"
@@ -45,7 +48,12 @@ def test_offline_cli_inventory_workflow(tmp_path: Path) -> None:
     assert json.loads(exported.read_text(encoding="utf-8"))["repositories"][0]["identity_key"] == "github.com/example/cli-tool"
 
     snapshot = tmp_path / "portable" / "inventory.sqlite3"
-    _run(runner, ["db", "snapshot", "--output", str(snapshot), "--config", str(config)])
+    def unexpected_migration(*_args, **_kwargs):
+        raise AssertionError("snapshot export must not initialize or mutate its source database")
+
+    monkeypatch.setattr(cli, "initialize", unexpected_migration)
+    _run(runner, ["db", "snapshot", "--output", str(snapshot), "--config", str(config),
+                  "--mode-profile", str(ROOT / "config/connected.yaml")])
     _run(runner, ["db", "verify", str(snapshot)])
 
 
@@ -68,7 +76,8 @@ def test_offline_scan_never_starts_github_or_provider_work(tmp_path: Path, monke
     monkeypatch.setattr(cli, "fetch_all", network_was_attempted)
     monkeypatch.setattr(cli, "enrich_all", network_was_attempted)
 
-    output = _run(runner, ["scan", "--config", str(config), "--enrich"])
+    output = _run(runner, ["scan", "--config", str(config), "--enrich",
+                          "--mode-profile", str(ROOT / "config/airgap.yaml")])
 
     assert "fetch=skipped; enrich=skipped" in output
     card = json.loads(_run(runner, ["lookup", "https://github.com/Example/Offline-Tool", "--config", str(config), "--json"]))
@@ -103,7 +112,8 @@ def test_scan_rejects_missing_target_dir_without_changing_config(tmp_path: Path)
     _run(runner, ["init", "--config", str(config)])
     original = config.read_text(encoding="utf-8")
 
-    result = runner.invoke(app, ["scan", "--target-dir", str(tmp_path / "missing"), "--config", str(config)])
+    result = runner.invoke(app, ["scan", "--target-dir", str(tmp_path / "missing"), "--config", str(config)],
+                           env={"ERECB_MODE_PROFILE": str(ROOT / "config/connected.yaml")})
 
     assert result.exit_code == 2
     assert "target directory does not exist" in result.output

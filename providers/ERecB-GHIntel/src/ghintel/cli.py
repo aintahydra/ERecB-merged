@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import shlex
+import sqlite3
 from importlib.resources import files
 from pathlib import Path
 from typing import Annotated
@@ -17,7 +19,7 @@ from rich.table import Table
 from . import __version__
 
 from .config import ResolvedConfig, load_config, persist_input_dir
-from .database import database, initialize, list_project_cards, lookup_project_card, search_project_cards
+from .database import database, initialize, list_project_cards, lookup_project_card, search_project_cards, upsert_requested_repository
 from .search import SearchQueryError
 from .corrections import CorrectionError, append_correction
 from .exports import ExportError, export_csv, export_json
@@ -25,8 +27,9 @@ from .roots import RootRemapError, list_roots, remap_root
 from .snapshots import SnapshotError, create_snapshot, verify_snapshot
 from .github_urls import normalize_github_url
 from .migrations import MigrationError
+from .merge import merge_databases as merge_intelligence_databases
 from .pipeline import run_discovery
-from .stage2 import FetchRateLimitExhausted, doctor_report, fetch_all, resume_run, verify_configured_model
+from .stage2 import FetchRateLimitExhausted, create_run, doctor_report, fetch_all, resume_run, verify_configured_model
 from .enrichment import enrich_all
 
 app = typer.Typer(help="Local-first GitHub repository intelligence.", no_args_is_help=True, invoke_without_command=True)
@@ -34,6 +37,39 @@ db_app = typer.Typer(help="Database maintenance commands.", no_args_is_help=True
 roots_app = typer.Typer(help="Scan-root portability commands.", no_args_is_help=True)
 app.add_typer(db_app, name="db")
 app.add_typer(roots_app, name="roots")
+requests_app = typer.Typer(help="Import verified offline repository requests.")
+homework_app = typer.Typer(help="Inspect or process unresolved repository requests.")
+app.add_typer(requests_app, name="requests")
+app.add_typer(homework_app, name="homework")
+
+
+def _require_mode(mode: str, profile: Path | None) -> None:
+    from erecb_triage.mode import ModeError, require_mode
+
+    try:
+        require_mode(mode, profile)
+    except ModeError as error:
+        error_console.print(f"[red]Mode profile error:[/red] {error}")
+        raise typer.Exit(2) from error
+
+
+@db_app.command("merge")
+def db_merge(
+    source: Annotated[Path, typer.Option("--source")],
+    dest: Annotated[Path, typer.Option("--dest")],
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    backup: Annotated[bool, typer.Option("--backup")] = False,
+    mode_profile: Annotated[Path | None, typer.Option("--mode-profile")] = None,
+) -> None:
+    """Merge a verified connected-machine snapshot into the air-gap database."""
+    _require_mode("airgap", mode_profile)
+    try:
+        console.print_json(json.dumps(merge_intelligence_databases(
+            source, dest, dry_run=dry_run, backup=backup,
+        )))
+    except (OSError, sqlite3.Error, ValueError, SnapshotError) as exc:
+        error_console.print(f"[red]Merge failed:[/red] {exc}")
+        raise typer.Exit(6) from exc
 console = Console()
 error_console = Console(stderr=True)
 
@@ -66,6 +102,120 @@ def _db_path(config: ResolvedConfig) -> Path:
 
 def _fetch_progress(current: int, total: int, identity: str) -> None:
     error_console.print(f"Fetching {current}/{total}: {identity}", markup=False)
+
+
+def _homework_path(config: ResolvedConfig, override: Path | None) -> Path:
+    return override or _db_path(config).with_name("ghintel-homework.sqlite3")
+
+
+@requests_app.command("import")
+def requests_import(
+    bundle: Path,
+    config: Annotated[Path, typer.Option("--config")] = Path("config.toml"),
+    state: Annotated[Path | None, typer.Option("--state")] = None,
+    mode_profile: Annotated[Path | None, typer.Option("--mode-profile")] = None,
+) -> None:
+    """Validate and queue URLs only; this command never queries GitHub."""
+    _require_mode("connected", mode_profile)
+    from erecb_triage.homework import HomeworkQueue
+    from erecb_triage.exchange import read_bundle
+
+    resolved = _config(config)
+    parsed = read_bundle(bundle)
+    for item in parsed["repositories"]:
+        identity = normalize_github_url(item["canonical_url"])
+        if identity.identity_key != item["identity_key"] or identity.canonical_url != item["canonical_url"]:
+            raise typer.BadParameter("repository normalization differs from GHIntel")
+    with HomeworkQueue(_homework_path(resolved, state), "repository") as queue:
+        console.print_json(json.dumps(queue.import_bundle(bundle)))
+
+
+@homework_app.command("list")
+def homework_list(
+    config: Annotated[Path, typer.Option("--config")] = Path("config.toml"),
+    state: Annotated[Path | None, typer.Option("--state")] = None,
+    mode_profile: Annotated[Path | None, typer.Option("--mode-profile")] = None,
+) -> None:
+    from erecb_triage.homework import HomeworkQueue
+
+    _require_mode("connected", mode_profile)
+    resolved = _config(config)
+    with HomeworkQueue(_homework_path(resolved, state), "repository") as queue:
+        console.print_json(json.dumps({"pause_until": queue.pause_until(), "items": queue.list_items()}))
+
+
+@homework_app.command("run")
+def homework_run(
+    limit: Annotated[int, typer.Option("--limit", min=1)] = 20,
+    config: Annotated[Path, typer.Option("--config")] = Path("config.toml"),
+    db: Annotated[Path | None, typer.Option("--db")] = None,
+    state: Annotated[Path | None, typer.Option("--state")] = None,
+    mode_profile: Annotated[Path | None, typer.Option("--mode-profile")] = None,
+) -> None:
+    """Fetch and enrich newest eligible URL-only requests first."""
+    from erecb_triage.homework import HomeworkQueue
+
+    _require_mode("connected", mode_profile)
+    resolved = _config(config, db)
+    initialize(_db_path(resolved))
+    completed = []
+    configured_force_llm = resolved.config.scan.force_llm_on_unchanged
+    with HomeworkQueue(_homework_path(resolved, state), "repository") as queue:
+        with database(_db_path(resolved)) as connection:
+            for item in queue.lease(limit=limit):
+                payload = json.loads(item["payload"])
+                retry_delay = None
+                try:
+                    detail = None
+                    repository = normalize_github_url(payload["canonical_url"])
+                    if repository.identity_key != item["identity"]:
+                        raise ValueError("repository normalization differs from request bundle")
+                    repository_id = upsert_requested_repository(connection, payload["canonical_url"])
+                    run_id = create_run(connection, kind="fetch", config=resolved, repository_ids=[repository_id])
+                    asyncio.run(fetch_all(connection, resolved, refresh=True, run_id=run_id))
+                    fetch_item = connection.execute(
+                        "SELECT state, error_message FROM run_items WHERE run_id=? AND repository_id=?",
+                        (run_id, repository_id),
+                    ).fetchone()
+                    if fetch_item is None or fetch_item["state"] != "complete":
+                        # An older snapshot must not turn a failed current fetch into a
+                        # successful refresh or trigger costly enrichment.
+                        outcome = "not_found" if fetch_item and "404" in (fetch_item["error_message"] or "") else "error"
+                        detail = fetch_item["error_message"] if fetch_item else "fetch run did not produce an item"
+                    elif connection.execute(
+                        "SELECT 1 FROM github_snapshots WHERE repository_id = ? LIMIT 1", (repository_id,),
+                    ).fetchone() is None:
+                        outcome = "not_found"
+                    else:
+                        # A forced all-indicators request explicitly refreshes old
+                        # enrichment even if its source-set fingerprint is unchanged.
+                        force_llm = configured_force_llm or item["selection"] == "all"
+                        resolved.config.scan.force_llm_on_unchanged = force_llm
+                        _configure_enrichment_mode(resolved, refresh=True,
+                                                   force_llm=force_llm)
+                        enrich_run_id = asyncio.run(enrich_all(
+                            connection, resolved, repository_refs=(payload["canonical_url"],),
+                        ))
+                        run_item = connection.execute(
+                            "SELECT state FROM run_items WHERE run_id=? AND repository_id=?",
+                            (enrich_run_id, repository_id),
+                        ).fetchone()
+                        card = lookup_project_card(connection, item["identity"])
+                        outcome = ("success" if run_item and run_item["state"] in {"complete", "skipped_reuse"}
+                                   and card and card.get("github_status") == "available" else "error")
+                except FetchRateLimitExhausted as exc:
+                    outcome = "rate_limited"
+                    detail = str(exc)
+                    retry_delay = max(1, math.ceil(exc.retry_after_seconds))
+                except Exception as exc:
+                    outcome = "error"
+                    detail = f"{type(exc).__name__}: {exc}"
+                queue.finish(item["identity"], lease_token=item["lease_token"], outcome=outcome,
+                             detail=detail, retry_after_seconds=retry_delay)
+                completed.append({"repository": item["identity"], "outcome": outcome})
+                if outcome == "rate_limited":
+                    break
+    console.print_json(json.dumps(completed))
 
 
 def _report_rate_limit(error: FetchRateLimitExhausted, config: ResolvedConfig) -> None:
@@ -328,8 +478,10 @@ def fetch(
     config: Annotated[Path, typer.Option("--config")] = Path("config.toml"),
     db: Annotated[Path | None, typer.Option("--db")] = None,
     refresh: Annotated[bool, typer.Option("--refresh", help="Use conditional GitHub requests even when cached")] = False,
+    mode_profile: Annotated[Path | None, typer.Option("--mode-profile")] = None,
 ) -> None:
     """Fetch GitHub metadata and README evidence into the local database."""
+    _require_mode("connected", mode_profile)
     resolved = _config(config, db)
     try:
         initialize(_db_path(resolved))
@@ -352,8 +504,10 @@ def enrich(
     force_llm: Annotated[bool, typer.Option("--force-llm", help="Recontact the provider even if unchanged evidence has a validated cache entry")] = False,
     config: Annotated[Path, typer.Option("--config")] = Path("config.toml"),
     db: Annotated[Path | None, typer.Option("--db")] = None,
+    mode_profile: Annotated[Path | None, typer.Option("--mode-profile")] = None,
 ) -> None:
     """Run budgeted enrichment with the configured provider after local readiness checks pass."""
+    _require_mode("connected", mode_profile)
     resolved = _config(config, db)
     _configure_enrichment_mode(resolved, refresh=refresh, force_llm=force_llm)
     try:
@@ -379,12 +533,15 @@ def scan(
     enrich_limit: Annotated[int | None, typer.Option("--enrich-limit", min=1, help="Maximum repositories to enrich in this scan")] = None,
     enrich_refresh: Annotated[bool, typer.Option("--enrich-refresh", help="Bypass reuse for the enrichment sub-run")] = False,
     enrich_force_llm: Annotated[bool, typer.Option("--enrich-force-llm", help="Recontact the provider for unchanged evidence")] = False,
+    mode_profile: Annotated[Path | None, typer.Option("--mode-profile")] = None,
 ) -> None:
     """Discover, then fetch; optionally enrich when the explicit gate is ready."""
-    resolved = _config(config, db)
     if (enrich_repository or enrich_limit is not None or enrich_refresh or enrich_force_llm) and not with_enrich:
         error_console.print("[red]Scan failed:[/red] --enrich target and refresh options require --enrich")
         raise typer.Exit(2)
+    resolved = _config(config, db)
+    if not resolved.config.github.offline:
+        _require_mode("connected", mode_profile)
     if target_dir is not None:
         try:
             saved = persist_input_dir(resolved.config_path, target_dir)
@@ -418,8 +575,10 @@ def resume(
     run_id: int,
     config: Annotated[Path, typer.Option("--config")] = Path("config.toml"),
     db: Annotated[Path | None, typer.Option("--db")] = None,
+    mode_profile: Annotated[Path | None, typer.Option("--mode-profile")] = None,
 ) -> None:
     """Resume an interrupted fetch or enrichment run without redoing completed items."""
+    _require_mode("connected", mode_profile)
     resolved = _config(config, db)
     try:
         initialize(_db_path(resolved))
@@ -440,8 +599,11 @@ def doctor(
     db: Annotated[Path | None, typer.Option("--db")] = None,
     as_json: Annotated[bool, typer.Option("--json")] = False,
     check_provider: Annotated[bool, typer.Option("--check-provider", "--check-gemini", help="Verify the configured enrichment model; sends no repository text")] = False,
+    mode_profile: Annotated[Path | None, typer.Option("--mode-profile")] = None,
 ) -> None:
     """Check readiness; --check-provider additionally verifies account model access."""
+    if check_provider:
+        _require_mode("connected", mode_profile)
     resolved = _config(config, db)
     try:
         initialize(_db_path(resolved))
@@ -477,11 +639,12 @@ def db_snapshot(
     output: Annotated[Path, typer.Option("--output", help="New snapshot path; must not already exist")],
     config: Annotated[Path, typer.Option("--config")] = Path("config.toml"),
     db: Annotated[Path | None, typer.Option("--db")] = None,
+    mode_profile: Annotated[Path | None, typer.Option("--mode-profile")] = None,
 ) -> None:
     """Create an online SQLite backup and checksum manifest."""
+    _require_mode("connected", mode_profile)
     resolved = _config(config, db)
     try:
-        initialize(_db_path(resolved))
         info = create_snapshot(_db_path(resolved), output)
     except (OSError, MigrationError, SnapshotError) as error:
         error_console.print(f"[red]Snapshot failed:[/red] {error}")

@@ -7,10 +7,9 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from erecb_triage.file_scope import executable_candidate
 from erecb_triage.processors.base import ProcessorError
-
-
-_SUFFIXES = {".exe", ".dll", ".so", ".dylib", ".bin", ".sh", ".py", ".ps1", ".js", ".vbs", ".jar"}
+from erecb_triage.staging import regular_reader
 
 
 @dataclass
@@ -23,12 +22,10 @@ class DiscoveryResult:
 
 def _executable(path: Path) -> bool:
     try:
-        with path.open("rb") as handle:
-            sample = handle.read(8192)
+        with regular_reader(path) as handle:
+            return executable_candidate(path, handle)
     except OSError:
         return False
-    return (sample.startswith((b"MZ", b"\x7fELF", b"\xfe\xed\xfa", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe"))
-            or (sample.startswith(b"#!") and bool(sample[2:].strip().split(None, 1))) or path.suffix.lower() in _SUFFIXES)
 
 
 def discover(root: Path, settings: dict) -> DiscoveryResult:
@@ -50,7 +47,7 @@ def discover(root: Path, settings: dict) -> DiscoveryResult:
                         or (name.startswith(".") and not settings["include_hidden_files"])):
                     result.metrics["yara_files_skipped"] += 1; continue
                 result.metrics["yara_files_discovered"] += 1
-                if not _executable(path):
+                if settings["selector"] == "exec-only" and not _executable(path):
                     continue
                 if maximum is not None and info.st_size > maximum:
                     result.metrics["yara_files_size_skipped"] += 1; continue

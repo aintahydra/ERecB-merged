@@ -15,6 +15,7 @@ REPORT_SUFFIXES = {
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
+    "mode": "airgap",
     "watch": {
         "path": "./in", "recursive": False, "event_debounce_ms": 500,
         "stable_check": {"enabled": True, "interval_ms": 250, "unchanged_checks": 3},
@@ -60,6 +61,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "type": "ip_retriever", "db_path": "./dbs/ipintel.sqlite3",
             "output_root": "./output", "chunk_size_bytes": 1048576,
             "chunk_overlap_bytes": 256, "max_file_size_bytes": None,
+            "selector": "exec-only", "max_depth_from_staged_root": None,
             "ip_singularity_threshold": 20,
             "max_observations_per_file": 1024, "max_observations_per_capture": 10000,
             "follow_symlinks": False, "include_hidden_files": True,
@@ -68,6 +70,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "file_retriever": {
             "type": "file_retriever", "db_path": "./dbs/fileintel.sqlite3",
             "output_root": "./output", "max_depth_from_staged_root": None,
+            "selector": "exec-only",
             "max_file_size_bytes": None, "hash_block_size_bytes": 1048576,
             "follow_symlinks": False, "include_hidden_files": True,
             "include_hidden_directories": True,
@@ -76,6 +79,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
         "ghintel": {
             "type": "ghintel", "db_path": "./dbs/ghintel.sqlite3", "output_root": "./output",
+            "selector": "exec-only",
             "chunk_size_bytes": 1048576, "max_candidate_bytes": 2048,
             "max_depth_from_staged_root": None, "max_file_size_bytes": None,
             "follow_symlinks": False, "include_hidden_files": True,
@@ -124,6 +128,8 @@ def validate_config(config: dict[str, Any]) -> None:
 
     if not isinstance(config, dict):
         raise ValueError("configuration must be a mapping")
+    if config.get("mode", "airgap") not in {"airgap", "connected"}:
+        raise ValueError("mode must be airgap or connected")
     logging_settings = config.get("logging", {})
     if not isinstance(logging_settings, dict):
         raise ValueError("logging must be a mapping")
@@ -245,6 +251,8 @@ def file_retriever_settings(settings: dict[str, Any]) -> dict[str, Any]:
     if "classifier" in settings and not isinstance(settings["classifier"], dict):
         raise ValueError("classifier must be a mapping")
     resolved = _merge_dicts(_deep_copy(DEFAULT_CONFIG["processors"]["file_retriever"]), _deep_copy(settings))
+    if resolved["selector"] not in {"exec-only", "all"}:
+        raise ValueError("selector must be exec-only or all")
     for key in ("max_depth_from_staged_root", "max_file_size_bytes"):
         value = resolved[key]
         if value is not None and (type(value) is not int or value < 0):
@@ -274,6 +282,11 @@ def ip_retriever_settings(settings: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(value, str) or not value.strip() or "\x00" in value:
             raise ValueError(f"{key} must be a nonempty path string without NUL")
     resolved = _merge_dicts(_deep_copy(DEFAULT_CONFIG["processors"]["ip_retriever"]), _deep_copy(settings))
+    if resolved["selector"] not in {"exec-only", "all"}:
+        raise ValueError("selector must be exec-only or all")
+    depth = resolved["max_depth_from_staged_root"]
+    if depth is not None and (type(depth) is not int or depth < 0):
+        raise ValueError("max_depth_from_staged_root must be a nonnegative integer or null")
     for key in ("chunk_size_bytes", "chunk_overlap_bytes"):
         value = resolved[key]
         minimum = 1 if key == "chunk_size_bytes" else MIN_CHUNK_OVERLAP_BYTES
@@ -304,6 +317,8 @@ def ghintel_settings(settings: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(value, str) or not value.strip() or "\x00" in value:
             raise ValueError(f"{key} must be a nonempty path string without NUL")
     resolved = _merge_dicts(_deep_copy(DEFAULT_CONFIG["processors"]["ghintel"]), _deep_copy(settings))
+    if resolved["selector"] not in {"exec-only", "all"}:
+        raise ValueError("selector must be exec-only or all")
     for key in ("chunk_size_bytes", "max_candidate_bytes"):
         value = resolved[key]
         if type(value) is not int or value < 1:
@@ -329,8 +344,8 @@ def yara_scan_settings(settings: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(value, str) or not value.strip() or "\x00" in value:
             raise ValueError(f"{key} must be a nonempty path string without NUL")
     resolved = _merge_dicts(_deep_copy(DEFAULT_CONFIG["processors"]["yara_scan"]), _deep_copy(settings))
-    if resolved["selector"] != "exec-only":
-        raise ValueError("selector must be exec-only")
+    if resolved["selector"] not in {"exec-only", "all"}:
+        raise ValueError("selector must be exec-only or all")
     for key in ("max_depth_from_staged_root", "max_file_size_bytes"):
         value = resolved[key]
         if value is not None and (type(value) is not int or value < 0):

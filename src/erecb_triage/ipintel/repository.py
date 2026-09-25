@@ -207,6 +207,13 @@ class IpIntelRepository:
         for provider in children["provider_results"]:
             if provider["provider_status"] not in {"success", "not_found", "failed"}:
                 raise sqlite3.DatabaseError("Provider result has an invalid status")
+        # Provider audit rows alone are not intelligence. IPIntel retains not-found and
+        # failed attempts for provenance, but those IPs still need future requests.
+        if (children["provider_results"]
+                and not any(item["provider_status"] == "success" for item in children["provider_results"])
+                and not any((row["country_code"], row["whois"], row["malicious"],
+                             children["reverse_dns"], children["related_iocs"], children["related_actors"]))):
+            return LookupResult("miss")
         return LookupResult("hit", intelligence=IpIntelligence(
             ip_entity_id=entity_id,
             ip=row["ip"],

@@ -9,12 +9,13 @@ import re
 import shutil
 import sqlite3
 import stat
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
 
-STAGING_SCHEMA_VERSION = 2
+STAGING_SCHEMA_VERSION = 3
 
 
 def sanitize_name(name: str) -> str:
@@ -201,6 +202,17 @@ class StagingState:
                 PRIMARY KEY (source_relative_path, processor_name)
             )
         ''')
+        self.connection.execute('''
+            CREATE TABLE IF NOT EXISTS analysis_runs (
+                id INTEGER PRIMARY KEY,
+                capture_id INTEGER NOT NULL REFERENCES captures(id),
+                generated_at TEXT NOT NULL,
+                policy_sha256 TEXT NOT NULL,
+                database_sha256 TEXT NOT NULL,
+                yara_generation TEXT,
+                statuses TEXT NOT NULL
+            )
+        ''')
         self.connection.execute(
             "INSERT INTO metadata(key, value) VALUES ('staging_schema_version', ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -217,6 +229,39 @@ class StagingState:
 
     def get(self, capture_id: int):
         return self.connection.execute("SELECT * FROM captures WHERE id = ?", (capture_id,)).fetchone()
+
+    def next_request_identity(self) -> tuple[str, int]:
+        """Allocate a stable, monotonic request identity for this air-gap installation."""
+        with self.connection:
+            row = self.connection.execute(
+                "SELECT value FROM metadata WHERE key = 'request_source_instance_id'"
+            ).fetchone()
+            source = row[0] if row else str(uuid.uuid4())
+            if row is None:
+                self.connection.execute(
+                    "INSERT INTO metadata(key, value) VALUES ('request_source_instance_id', ?)", (source,)
+                )
+            row = self.connection.execute(
+                "SELECT value FROM metadata WHERE key = 'request_source_sequence'"
+            ).fetchone()
+            sequence = int(row[0]) + 1 if row else 1
+            self.connection.execute(
+                "INSERT INTO metadata(key, value) VALUES ('request_source_sequence', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (str(sequence),)
+            )
+        return source, sequence
+
+    def record_analysis(self, capture_id: int, provenance: dict, statuses: list[dict]) -> None:
+        timestamp = self.clock().astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        compact_statuses = [{"name": item["name"], "state": item["state"]} for item in statuses]
+        with self.connection:
+            self.connection.execute(
+                "INSERT INTO analysis_runs(capture_id, generated_at, policy_sha256, "
+                "database_sha256, yara_generation, statuses) VALUES (?, ?, ?, ?, ?, ?)",
+                (capture_id, timestamp, provenance["policy_sha256"],
+                 json.dumps(provenance["database_sha256"], sort_keys=True),
+                 provenance.get("yara_generation"), json.dumps(compact_statuses, sort_keys=True)),
+            )
 
     def reserve(self, relative: str, digest: str, label: str, archive: bool,
                 parent: Path | None = None, existing_parent: Path | None = None):

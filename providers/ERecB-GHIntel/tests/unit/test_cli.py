@@ -10,6 +10,8 @@ from ghintel.cli import _configure_enrichment_mode, app
 from ghintel.config import Config
 from ghintel.stage2 import FetchRateLimitExhausted
 
+ROOT = Path(__file__).parents[4]
+
 
 def test_scan_rejects_enrichment_targets_without_enrich(tmp_path: Path) -> None:
     config = tmp_path / "config.toml"
@@ -50,6 +52,16 @@ def test_version_option_reports_installed_package_version() -> None:
     assert result.output.strip() == f"ghintel {__version__}"
 
 
+def test_request_import_rejects_airgap_profile_before_reading_bundle() -> None:
+    result = CliRunner().invoke(app, [
+        "requests", "import", "missing-bundle.json",
+        "--mode-profile", str(ROOT / "config/airgap.yaml"),
+    ])
+
+    assert result.exit_code == 2
+    assert "requires the connected profile" in result.output
+
+
 def test_fetch_rate_limit_exits_with_resume_instructions(tmp_path: Path, monkeypatch) -> None:
     runner = CliRunner()
     config = tmp_path / "config.toml"
@@ -65,7 +77,8 @@ def test_fetch_rate_limit_exits_with_resume_instructions(tmp_path: Path, monkeyp
         )
 
     monkeypatch.setattr(cli, "fetch_all", rate_limited)
-    result = runner.invoke(app, ["fetch", "--config", str(config)])
+    result = runner.invoke(app, ["fetch", "--config", str(config)],
+                           env={"ERECB_MODE_PROFILE": str(ROOT / "config/connected.yaml")})
 
     assert result.exit_code == 7
     assert "safely interrupted" in result.output

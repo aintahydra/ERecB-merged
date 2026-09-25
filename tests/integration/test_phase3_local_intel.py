@@ -80,7 +80,7 @@ class IpIntelContractTests(unittest.TestCase):
                 "capture_name": staged.name, "source_event_id": "event-1", "pipeline_run_id": "run-1",
             }, {
                 "type": "ip_retriever", "db_path": "db.sqlite3", "output_root": "output",
-                "ip_singularity_threshold": 20, "report_suffix": "-ipintel.md",
+                "ip_singularity_threshold": 20, "report_suffix": "-ipintel.md", "selector": "all",
             }, base)
             self.assertEqual(result.observations, [])
             self.assertEqual(result.metrics["ipintel_singularities"], 1)
@@ -103,6 +103,7 @@ class IpIntelContractTests(unittest.TestCase):
             })
             config["pipelines"]["on_added"]["analysis"]["processors"] = ["ip_retriever"]
             config["processors"]["ip_retriever"]["db_path"] = str((ROOT / "dbs" / "ipintel.sqlite3").resolve())
+            config["processors"]["ip_retriever"]["selector"] = "all"
             with Dispatcher(config, base_dir=base) as dispatcher:
                 result = dispatcher.dispatch(WatchEvent.added(incoming, archive))
             self.assertFalse(result.errors, [issue.message for issue in result.errors])

@@ -5,6 +5,7 @@ ERecB Triage is a Python directory watcher and controlled archive unarchiver.
 This checkout also contains the FileIntel, GHIntel, IPIntel, and YaraRuler producers under
 `providers/`. They share one Git repository with triage; see
 [`design/REPOSITORY_LAYOUT.md`](design/REPOSITORY_LAYOUT.md) for ownership and artifact paths.
+For connected/air-gapped operation, see the [two-machine runbook](docs/TWO_MACHINE_RUNBOOK.md).
 
 It watches `in/` for newly dropped archive files or capture directories and extracts supported
 archives into `middle-earth/` without executing any captured content.

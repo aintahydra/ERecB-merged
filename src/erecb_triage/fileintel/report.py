@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote_from_bytes
 from uuid import uuid4
+from erecb_triage.report_provenance import items as provenance_items
 
 
 def escape(value) -> str:
@@ -80,10 +81,12 @@ def render_report(capture, records, metrics, errors, *, base_dir: Path, report_p
         ("Files scanned", metrics["fileintel_files_scanned"]),
         ("Files skipped", metrics["fileintel_files_skipped"]),
         ("Executables found", metrics["fileintel_executables_found"]),
-        ("Successfully hashed executable paths", metrics["fileintel_observations"]),
+        ("Successfully hashed paths" if capture.get("fileintel_selector") == "all" else
+         "Successfully hashed executable paths", metrics["fileintel_observations"]),
         ("Executables with local intelligence", paths_with("hit")),
         ("Executables without local intelligence", paths_with("miss")),
-        ("Unique executable hashes", metrics["fileintel_unique_hashes"]),
+        ("Unique hashes" if capture.get("fileintel_selector") == "all" else
+         "Unique executable hashes", metrics["fileintel_unique_hashes"]),
         ("Lookup hits / misses / ambiguities / unavailable / errors", " / ".join(str(metrics[key]) for key in (
             "fileintel_lookup_hits", "fileintel_lookup_misses", "fileintel_lookup_ambiguities",
             "fileintel_lookup_unavailable", "fileintel_lookup_errors",
@@ -92,6 +95,7 @@ def render_report(capture, records, metrics, errors, *, base_dir: Path, report_p
         ("Database availability", database_availability),
         ("Generated at", generated_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")),
     ]
+    summary.extend(provenance_items(capture, "file_retriever"))
     lines.extend(f"- {label}: {escape(value)}" for label, value in summary)
 
     def table(title, headers, rows):

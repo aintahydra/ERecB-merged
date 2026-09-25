@@ -10,7 +10,10 @@ from yararuler.errors import ConfigurationError, YaraRulerError
 from yararuler.logging import configure_logging
 from yararuler.report.service import ReportService
 from yararuler.rules.update import RuleUpdateService
+from yararuler.rules.exchange import export_cache, import_cache
+from yararuler.rules.update import update_lock
 from yararuler.scan.service import ScanService
+from erecb_triage.mode import ModeError
 
 app = typer.Typer(
     name="yararuler",
@@ -42,7 +45,7 @@ def _configuration(ctx: typer.Context) -> AppConfig:
 
 
 def _fail(exc: BaseException) -> None:
-    code = exc.exit_code if isinstance(exc, YaraRulerError) else 70
+    code = exc.exit_code if isinstance(exc, YaraRulerError) else 2 if isinstance(exc, ModeError) else 70
     if code == 70:
         LOGGER.exception("unexpected internal error", exc_info=exc)
     typer.echo(f"error: {exc}", err=True)
@@ -52,6 +55,7 @@ def _fail(exc: BaseException) -> None:
 @app.command("update-rules")
 def update_rules(
     ctx: typer.Context,
+    mode_profile: Path | None = typer.Option(None, "--mode-profile"),
     source: list[str] | None = typer.Option(
         None, "--source", help="Additional repository URL for this update."
     ),
@@ -61,18 +65,48 @@ def update_rules(
 ) -> None:
     """Clone or update configured repositories and publish a validated cache."""
     try:
+        from erecb_triage.mode import require_mode
+        require_mode("connected", mode_profile)
         config = _configuration(ctx)
         summary = RuleUpdateService().update(
             config, extra_source_urls=source or [], force_rebuild=force_rebuild
         )
         typer.echo(
-            f"published generation {summary.generation}: "
+            f"active generation {summary.generation}: "
             f"sources={summary.sources} accepted={summary.accepted} "
             f"quarantined={summary.quarantined} cache={summary.cache_path}",
             err=True,
         )
     except typer.Exit:
         raise
+    except Exception as exc:
+        _fail(exc)
+
+
+@app.command("cache-export")
+def cache_export(ctx: typer.Context, output: Path = typer.Option(..., "--output"),
+                 mode_profile: Path | None = typer.Option(None, "--mode-profile")) -> None:
+    """Package the verified active compiled generation for manual transfer."""
+    try:
+        from erecb_triage.mode import require_mode
+        require_mode("connected", mode_profile)
+        config = _configuration(ctx)
+        typer.echo(f"exported generation {export_cache(config.rules.cache_dir, output)} to {output}")
+    except Exception as exc:
+        _fail(exc)
+
+
+@app.command("cache-import")
+def cache_import(ctx: typer.Context, source: Path = typer.Option(..., "--source"),
+                 mode_profile: Path | None = typer.Option(None, "--mode-profile")) -> None:
+    """Verify compatibility and atomically activate a transferred generation."""
+    try:
+        from erecb_triage.mode import require_mode
+        require_mode("airgap", mode_profile)
+        config = _configuration(ctx)
+        with update_lock(config.paths.rules_dir / ".update.lock"):
+            generation = import_cache(source, config.rules.cache_dir)
+        typer.echo(f"activated generation {generation}")
     except Exception as exc:
         _fail(exc)
 

@@ -1,0 +1,32 @@
+# Offline capture, report replay, request export and verified return-path profile.
+mode: airgap
+watch:
+  path: "./in"
+dispatcher:
+  staging_root: "./middle-earth"
+  # Keep the merged-project capture index separate from a legacy checkout's index.
+  staging_index_path: "./data/airgap-staging.sqlite3"
+  output_root: "./output"
+  publish_summary: true
+pipelines:
+  on_added:
+    preprocessors:
+      processors: ["stage_input", "artifact_inventory"]
+    analysis:
+      processors: ["ip_retriever", "file_retriever", "ghintel", "yara_scan"]
+processors:
+  ip_retriever:
+    selector: exec-only
+    db_path: "./dbs/ipintel.sqlite3"
+  file_retriever:
+    selector: exec-only
+    db_path: "./dbs/fileintel.sqlite3"
+    classifier:
+      use_magic: false
+      extension_fallback: true
+  ghintel:
+    selector: exec-only
+    db_path: "./dbs/ghintel.sqlite3"
+  yara_scan:
+    selector: exec-only
+    cache_dir: "./rules/cache"

@@ -29,10 +29,15 @@ erecb-ipintel init-db
 Scan a directory and enrich the output:
 
 ```bash
+export ERECB_MODE_PROFILE=/path/to/config/connected.yaml
 erecb-ipintel scan in/sample
 erecb-ipintel enrich output/ips_sample_YYMMDD-HHMMSS.txt
 erecb-ipintel status
 ```
+
+Provider enrichment, request-queue processing, and database snapshots require the connected
+profile. Snapshot merges require the air-gap profile. Select either with
+`--mode-profile PATH` for one command.
 
 For redistribution, build artifacts are written to `dist/`:
 

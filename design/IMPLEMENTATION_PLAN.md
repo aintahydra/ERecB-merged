@@ -3,7 +3,7 @@
 ## 1. Purpose
 
 This document is the roadmap and index for implementing DESIGN 01-06. Detailed work is split
-into the numbered `IMPLEMENTATION_01_...` through `IMPLEMENTATION_07_...` phase documents.
+into the numbered `IMPLEMENTATION_01_...` through `IMPLEMENTATION_08_...` phase documents.
 
 Supporting references: [reproduction](REPRODUCTION_GUIDE.md), [maintenance](MAINTENANCE_GUIDE.md),
 and [Ubuntu distribution](DISTRIBUTION_UBUNTU.md).
@@ -25,8 +25,8 @@ ready `staged_capture`. A future correlation processor is separate.
 
 1. Captured files are hostile data and are never executed, imported, sourced, or mounted.
 2. Capture analysis performs no provider, GitHub, LLM, Git, or rule-repository network work.
-3. IPIntel, FileIntel, and GHIntel databases are opened strictly read-only and never created,
-   migrated, repaired, enriched, or merged by this system.
+3. Capture analysis opens IPIntel, FileIntel, and GHIntel databases strictly read-only. Explicit
+   maintenance commands outside the capture pipeline invoke producer-owned merges.
 4. YaraScan consumes one verified immutable YaraRuler cache generation and never compiles
    source rules in the event path.
 5. YARA matches file content; hashes identify the exact matched file bytes.
@@ -48,9 +48,9 @@ ready `staged_capture`. A future correlation processor is separate.
 | Archive-filename report naming | Implemented / verified | Stable slots refresh canonical hyphenated report paths |
 | GHIntel adapter | Implemented / baseline verified | Broader producer-compatibility corpus remains Phase 04 work |
 | YaraRuler pipeline adapter | Implemented / single-worker baseline verified | Process-worker equivalence awaits a compatible native-YARA corpus |
-| Unified four-adapter profile | Planned | Existing profiles are partial |
+| Unified four-adapter profile | Implemented baseline | Full release verification remains Phase 06 work |
 
-The checked-in producer databases match the documented schema families, but consumers must
+The local producer databases match the documented schema families, but consumers must
 validate required tables/columns at runtime. A schema version alone is insufficient.
 
 ## 4. Phase index
@@ -67,6 +67,7 @@ parallel only after phase 02 and their phase-01 contracts/fixtures are accepted.
 | 05 | YaraRuler | [`IMPLEMENTATION_05_YARARULER.md`](IMPLEMENTATION_05_YARARULER.md) | 02; phase-01 fixtures |
 | 06 | Unified triage release | [`IMPLEMENTATION_06_UNIFIED_TRIAGE_RELEASE.md`](IMPLEMENTATION_06_UNIFIED_TRIAGE_RELEASE.md) | 03, 04, 05 |
 | 07 | Scale and optional correlation | [`IMPLEMENTATION_07_SCALE_CORRELATION.md`](IMPLEMENTATION_07_SCALE_CORRELATION.md) | 06 and measured baseline |
+| 08 | Two-machine intelligence exchange | [`IMPLEMENTATION_08_TWO_MACHINE_EXCHANGE.md`](IMPLEMENTATION_08_TWO_MACHINE_EXCHANGE.md) | Offline triage baseline and provider contracts |
 
 Each phase document specifies objective, code surfaces, work packages, tests, verification
 artifacts, and exit gate. Its presence does not indicate completion.
@@ -82,6 +83,7 @@ artifacts, and exit gate. Its presence does not indicate completion.
 | 05 | Verified-cache YARA matching with target/rule provenance and no matched-byte leakage |
 | 06 | Supported all-processors configuration, packaging, runbook, corpus, recovery, and soak proof |
 | 07 | Measured optional optimizations/correlation that preserve phases 01-06 invariants |
+| 08 | On-demand air-gap reports and request export, provider-owned LIFO enrichment, verified DB/cache return and merge |
 
 ## 6. Release-wide verification matrix
 

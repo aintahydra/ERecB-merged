@@ -51,6 +51,7 @@ class FileRetriever(Processor):
                 continue
             try:
                 capture = self._authorize(record, context)
+                capture["fileintel_selector"] = self.config["selector"]
             except (OSError, ValueError, sqlite3.Error) as exc:
                 errors.append(ProcessorError(context.event.path, str(exc), "invalid_staged_capture"))
                 continue

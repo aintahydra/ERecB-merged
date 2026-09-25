@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
+  "erecb-triage>=0.1.6",
   "pydantic>=2.7,<3",
   "typer>=0.12,<1",
   "yara-python>=4.3,<5",

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from erecb_triage.config import file_retriever_settings
 from erecb_triage.fileintel.classifier import (
-    MAGIC_SAMPLE_BYTES, Availability, ExecutableClassifier, MagicDescription,
+    MAGIC_SAMPLE_BYTES, Availability, Classification, ExecutableClassifier, MagicDescription,
 )
 from erecb_triage.fileintel.contracts import FileObservation
 from erecb_triage.fileintel.hashing import (
@@ -68,7 +68,7 @@ def scan_capture(capture: dict, settings: dict, base_dir: Path, *,
     base_dir = base_dir.resolve()
     classifier = ExecutableClassifier(**settings["classifier"], describe=describe)
     result = DiscoveryResult(classification_availability=classifier.availability)
-    if classifier.unavailable_reason is not None:
+    if classifier.unavailable_reason is not None and settings["selector"] == "exec-only":
         result.errors.append(ProcessorError(root, classifier.unavailable_reason, "fileintel_magic_unavailable"))
     max_size = settings["max_file_size_bytes"]
     block_size = settings["hash_block_size_bytes"]
@@ -84,7 +84,7 @@ def scan_capture(capture: dict, settings: dict, base_dir: Path, *,
         if max_size is not None and listed.st_size > max_size:
             skip()
             return
-        if classifier.availability == "unavailable":
+        if settings["selector"] == "exec-only" and classifier.availability == "unavailable":
             skip()
             return
         phase = "read"
@@ -99,11 +99,13 @@ def scan_capture(capture: dict, settings: dict, base_dir: Path, *,
                     sample = read_header(reader, MAGIC_SAMPLE_BYTES, block_size=block_size,
                                          max_size=max_size) if classifier.describe is not None else b""
                     phase = "classification"
-                    classification = classifier.classify(source, sample)
+                    classification = (classifier.classify(source, sample) if classifier.availability != "unavailable"
+                                      else Classification(None, None))
                     result.metrics["fileintel_files_scanned"] += 1
-                    if classification.reason is None:
+                    if settings["selector"] == "exec-only" and classification.reason is None:
                         return
-                    result.metrics["fileintel_executables_found"] += 1
+                    if classification.reason is not None:
+                        result.metrics["fileintel_executables_found"] += 1
                     phase = "hash"
                     hashes = hash_stream(reader, block_size=block_size, max_size=max_size, prefix=sample)
                     if (hashes.size_bytes != before[2]
@@ -115,7 +117,7 @@ def scan_capture(capture: dict, settings: dict, base_dir: Path, *,
             result.observations.append(FileObservation(
                 type="file_observation", sha256_hash=hashes.sha256_hash, md5_hash=hashes.md5_hash,
                 size_bytes=hashes.size_bytes, magic=classification.magic,
-                classification_reason=classification.reason,
+                classification_reason=classification.reason or "all files",
                 source_path=str(source), display_path=display, staged_capture=str(root),
                 capture_name=capture["capture_name"], source_event_id=capture["source_event_id"],
                 pipeline_run_id=capture["pipeline_run_id"],

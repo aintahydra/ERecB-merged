@@ -100,6 +100,7 @@ class RepositoryAndPipelineTests(unittest.TestCase):
             config["dispatcher"].update({"staging_root": "./middle-earth", "output_root": "./output", "staging_index_path": "./data/staging.sqlite3"})
             config["pipelines"]["on_added"]["analysis"]["processors"] = ["ghintel"]
             config["processors"]["ghintel"]["db_path"] = "./ghintel.sqlite3"
+            config["processors"]["ghintel"]["selector"] = "all"
             with Dispatcher(config, base_dir=base) as dispatcher:
                 result = dispatcher.dispatch(WatchEvent.added(incoming, archive))
             self.assertFalse(result.errors, [error.message for error in result.errors])

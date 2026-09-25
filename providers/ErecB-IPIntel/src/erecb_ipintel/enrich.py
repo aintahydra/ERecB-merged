@@ -60,6 +60,7 @@ def enrich_file(
     unique_ips = sorted({row.ip for row in tuples}, key=lambda ip: (":" in ip, ip))
     selected_ips = unique_ips[:max_ips] if max_ips is not None else unique_ips
     result, completed_ips = _enrich_ips(selected_ips, config, db, str(path), provider_names, progress)
+    result.pop("not_found", None)  # Preserve the legacy extraction-file result contract.
     remaining_tuples = {row for row in tuples if row.ip not in completed_ips}
     if consume and completed_ips:
         _remove_completed_ips(path, completed_ips)
@@ -97,6 +98,7 @@ def _enrich_ips(
 ) -> tuple[dict[str, int | bool], set[str]]:
     total_success = 0
     total_failure = 0
+    total_not_found = 0
     rate_limited = False
     provider_completions: list[set[str]] = []
     providers = [
@@ -122,6 +124,7 @@ def _enrich_ips(
                     completed_for_provider.add(ip)
                 elif raw.status == "not_found":
                     failure_count += 1
+                    total_not_found += 1
                     completed_for_provider.add(ip)
                 else:
                     failure_count += 1
@@ -146,6 +149,7 @@ def _enrich_ips(
         {
             "success": total_success,
             "failed": total_failure,
+            "not_found": total_not_found,
             "rate_limited": rate_limited,
         },
         completed_ips,

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote_from_bytes
 from uuid import uuid4
+from erecb_triage.report_provenance import items as provenance_items
 
 
 def escape(value) -> str:
@@ -42,6 +43,7 @@ def render_report(capture: dict, records: list[dict], metrics: dict[str, int], e
                ("Unique repositories", metrics["ghintel_unique_repositories"]), ("Source event ID", capture["source_event_id"]),
                ("Pipeline run ID", capture["pipeline_run_id"]),
                ("Generated at", generated_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"))]
+    summary.extend(provenance_items(capture, "ghintel"))
     lines.extend(f"- {label}: {escape(value)}" for label, value in summary)
 
     def table(title, headers, rows):

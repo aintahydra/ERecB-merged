@@ -12,9 +12,14 @@ The primary read workflow is deliberately simple: given a GitHub URL, an investi
 After installation, initialize a local configuration and scan a repository corpus with:
 
 ```bash
+export ERECB_MODE_PROFILE=/path/to/config/connected.yaml
 ghintel init --config config.toml
 ghintel scan --target-dir /media/sf_VMShared/in/20231003 --config config.toml
 ```
+
+Commands that fetch GitHub data, enrich through a model, snapshot databases, or process
+exchange homework require the connected profile. Use `--mode-profile PATH` for a one-command
+override. Offline local inventory and read-only queries do not require a connected profile.
 
 `--target-dir` is persistent: ghintel validates the directory, writes its normalized absolute path to `[paths].input_dir` in `config.toml`, and uses it immediately. Subsequent `discover` and `scan` commands use the saved directory.
 

@@ -182,6 +182,16 @@ def _upsert_repository(connection: sqlite3.Connection, repository: GithubReposit
     )
 
 
+def upsert_requested_repository(connection: sqlite3.Connection, canonical_url: str) -> int:
+    """Persist an imported URL without fabricating a local Git checkout."""
+    from .github_urls import normalize_github_url
+
+    repository = normalize_github_url(canonical_url)
+    repository_id = _upsert_repository(connection, repository, _now())
+    connection.commit()
+    return repository_id
+
+
 def _store_source(connection: sqlite3.Connection, repository_id: int, copy_id: int, source: CapturedSource, now: str) -> None:
     row = connection.execute(
         "SELECT id FROM source_documents WHERE repository_id=? AND local_copy_id=? AND origin='local' AND locator=?",

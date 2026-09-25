@@ -9,6 +9,7 @@ description = "Collect executable hashes and enrich them with file intelligence.
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "erecb-triage>=0.1.6",
   "python-magic>=0.4.27",
   "PyYAML>=6.0",
   "requests>=2.31.0",
@@ -19,4 +20,3 @@ erecb-fileintel = "erecb_fileintel.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

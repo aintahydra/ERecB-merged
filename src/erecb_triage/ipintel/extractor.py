@@ -217,6 +217,7 @@ def extract_bytes(data: bytes, *, chunk_size: int = 1048576, chunk_overlap: int 
 def scan_capture(capture: dict, settings: dict, base_dir: Path) -> ExtractionResult:
     """Scan a caller-authorized staged record; processor authorization is Phase 5 work."""
     settings = ip_retriever_settings(settings)
+    from erecb_triage.file_scope import executable_candidate
     if capture.get("type") != "staged_capture":
         raise ValueError("a staged_capture record is required")
     for key in ("staged_path", "capture_name", "source_event_id", "pipeline_run_id"):
@@ -266,6 +267,9 @@ def scan_capture(capture: dict, settings: dict, base_dir: Path) -> ExtractionRes
                 with regular_reader(physical.name, dir_fd=parent_fd) as reader:
                     if _stat_signature(os.fstat(reader.fileno())) != before:
                         raise FileChanged("file changed before reading")
+                    if settings["selector"] == "exec-only" and not executable_candidate(source, reader):
+                        skip()
+                        return
                     found, size, ip_list_singularity = _extract_stream(
                         reader, chunk_size=settings["chunk_size_bytes"],
                         chunk_overlap=settings["chunk_overlap_bytes"],
@@ -317,9 +321,9 @@ def scan_capture(capture: dict, settings: dict, base_dir: Path) -> ExtractionRes
             error(source, exc, code)
 
     def walk(root_fd: int) -> None:
-        pending = [(Path(), Path(), frozenset())]
+        pending = [(Path(), Path(), 0, frozenset())]
         while pending:
-            lexical, physical, ancestors = pending.pop()
+            lexical, physical, depth, ancestors = pending.pop()
             source_directory = root / lexical
             children = []
             try:
@@ -349,9 +353,11 @@ def scan_capture(capture: dict, settings: dict, base_dir: Path) -> ExtractionRes
                                 with _open_directory(root_fd, relative.parent) as parent_fd:
                                     info = os.stat(relative.name or ".", dir_fd=parent_fd, follow_symlinks=False)
                             if stat.S_ISDIR(info.st_mode):
-                                if entry.name.startswith(".") and not settings["include_hidden_directories"]:
+                                if (entry.name.startswith(".") and not settings["include_hidden_directories"]
+                                        or settings["max_depth_from_staged_root"] is not None
+                                        and depth >= settings["max_depth_from_staged_root"]):
                                     continue
-                                children.append((lexical / entry.name, relative, lineage))
+                                children.append((lexical / entry.name, relative, depth + 1, lineage))
                             elif (not stat.S_ISREG(info.st_mode)
                                   or entry.name.startswith(".") and not settings["include_hidden_files"]):
                                 skip()

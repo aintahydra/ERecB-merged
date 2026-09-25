@@ -8,7 +8,7 @@ version = "0.1.1"
 description = "Collect IP addresses from files and enrich them with threat intelligence."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["erecb-triage>=0.1.6"]
 
 [project.optional-dependencies]
 yaml = ["PyYAML>=6"]

@@ -45,6 +45,37 @@ class EnrichmentService:
                 error_count += self._lookup_file(file, provider)
         return error_count
 
+    def enrich_hash(self, sha256_hash: str, md5_hash: str | None) -> str:
+        """Query one imported indicator, bypassing age reuse for this explicit request."""
+        file = self.repository.upsert_hash_only(sha256_hash, md5_hash)
+        if not self.providers:
+            return "error"
+        statuses = []
+        for provider in self.providers:
+            self._lookup_file(file, provider)
+            row = self.repository.conn.execute(
+                "SELECT status FROM provider_lookups WHERE file_id = ? AND provider = ? "
+                "ORDER BY id DESC LIMIT 1", (file.id, provider.name),
+            ).fetchone()
+            statuses.append(row["status"] if row else "provider_error")
+        if "success" in statuses:
+            return "success"
+        # An unresolved imported hash belongs to homework, not the intelligence DB.
+        # Preserve audit rows (their FK is SET NULL) but remove a hash-only placeholder.
+        with self.repository.conn:
+            self.repository.conn.execute(
+                "DELETE FROM files WHERE id = ? AND malicious = 'unknown' AND magic IS NULL "
+                "AND NOT EXISTS (SELECT 1 FROM file_observations WHERE file_id = ?) "
+                "AND NOT EXISTS (SELECT 1 FROM tags WHERE file_id = ?) "
+                "AND NOT EXISTS (SELECT 1 FROM file_names WHERE file_id = ?)",
+                (file.id, file.id, file.id, file.id),
+            )
+        if "rate_limited" in statuses:
+            return "rate_limited"
+        if statuses and all(status == "not_found" for status in statuses):
+            return "not_found"
+        return "error"
+
     def _lookup_file(self, file: FileForEnrichment, provider: IntelligenceProvider) -> int:
         query_hash, query_hash_type = self._choose_query_hash(file, provider)
         lookup_id = self.repository.create_provider_lookup(file.id, provider.name, query_hash, query_hash_type)
@@ -103,4 +134,3 @@ class EnrichmentService:
         path = directory / f"{query_hash}.json"
         path.write_text(json.dumps(raw, indent=2, sort_keys=True), encoding="utf-8")
         return str(path)
-

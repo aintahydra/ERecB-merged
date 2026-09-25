@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,6 +42,7 @@ def merge_databases(
     backup: bool = False,
     dry_run: bool = False,
     conflict_policy: str = "warn",
+    intelligence_only: bool = False,
 ) -> MergeSummary:
     """Merge a source File Intel DB into a destination File Intel DB in one transaction."""
     if conflict_policy != "warn":
@@ -58,19 +60,42 @@ def merge_databases(
         destination_conn = _open_destination(destination, dry_run)
         summary = MergeSummary(source=source, destination=destination, dry_run=dry_run)
 
+        if intelligence_only:
+            source_digest = _file_digest(source)
+            has_ledger = destination_conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='intelligence_imports'"
+            ).fetchone()
+            if has_ledger and destination_conn.execute(
+                    "SELECT 1 FROM intelligence_imports WHERE source_sha256 = ?", (source_digest,)
+                    ).fetchone():
+                summary.warnings.append("source snapshot was already imported; no changes made")
+                return summary
+
         if backup and not dry_run and destination.exists():
             summary.backup_path = _create_backup(destination_conn, destination)
 
         destination_conn.execute("BEGIN")
         try:
+            if intelligence_only:
+                destination_conn.execute(
+                    "CREATE TABLE IF NOT EXISTS intelligence_imports "
+                    "(source_sha256 TEXT PRIMARY KEY, imported_at TEXT NOT NULL)"
+                )
             file_id_map = _merge_files(source_conn, destination_conn, summary)
             _merge_set_rows(source_conn, destination_conn, "file_names", "file_name", file_id_map, summary)
             _merge_set_rows(source_conn, destination_conn, "tags", "tag", file_id_map, summary)
-            scan_job_id_map = _copy_scan_jobs(source_conn, destination_conn, summary)
-            _copy_scan_errors(source_conn, destination_conn, scan_job_id_map, summary)
-            _copy_observations(source_conn, destination_conn, file_id_map, scan_job_id_map, summary)
-            _copy_provider_lookups(source_conn, destination_conn, file_id_map, summary)
-            _merge_watch_directories(source_conn, destination_conn, scan_job_id_map, summary)
+            if not intelligence_only:
+                scan_job_id_map = _copy_scan_jobs(source_conn, destination_conn, summary)
+                _copy_scan_errors(source_conn, destination_conn, scan_job_id_map, summary)
+                _copy_observations(source_conn, destination_conn, file_id_map, scan_job_id_map, summary)
+            _copy_provider_lookups(source_conn, destination_conn, file_id_map, summary,
+                                   omit_paths=intelligence_only)
+            if not intelligence_only:
+                _merge_watch_directories(source_conn, destination_conn, scan_job_id_map, summary)
+            else:
+                destination_conn.execute(
+                    "INSERT INTO intelligence_imports VALUES (?, datetime('now'))", (source_digest,)
+                )
 
             foreign_key_errors = destination_conn.execute("PRAGMA foreign_key_check").fetchall()
             if foreign_key_errors:
@@ -93,15 +118,34 @@ def merge_databases(
 
 
 def _open_destination(path: Path, dry_run: bool) -> sqlite3.Connection:
-    if dry_run and not path.exists():
+    if dry_run:
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-        initialize_schema(conn)
+        if path.exists():
+            source = connect_read_only(path)
+            try:
+                validate_fileintel_db(source)
+                source.backup(conn)
+            finally:
+                source.close()
+        else:
+            initialize_schema(conn)
         return conn
     conn = connect(path)
-    initialize_schema(conn)
+    if path.exists() and any(conn.execute("SELECT name FROM sqlite_master WHERE type='table'")):
+        validate_fileintel_db(conn)
+    else:
+        initialize_schema(conn)
     return conn
+
+
+def _file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _create_backup(conn: sqlite3.Connection, destination: Path) -> Path:
@@ -307,7 +351,8 @@ def _copy_observations(
 
 
 def _copy_provider_lookups(
-    source: sqlite3.Connection, destination: sqlite3.Connection, file_id_map: dict[int, int], summary: MergeSummary
+    source: sqlite3.Connection, destination: sqlite3.Connection, file_id_map: dict[int, int],
+    summary: MergeSummary, *, omit_paths: bool = False,
 ) -> None:
     columns = "file_id, provider, query_hash, query_hash_type, status, http_status, requested_at, completed_at, raw_response_path, error_message"
     for row in source.execute(f"SELECT {columns} FROM provider_lookups ORDER BY id"):
@@ -315,9 +360,11 @@ def _copy_provider_lookups(
         destination_file_id = file_id_map[int(source_file_id)] if source_file_id is not None else None
         values = [destination_file_id]
         values.extend(row[column.strip()] for column in columns.split(",")[1:])
+        if omit_paths:
+            values[-2] = None
         destination.execute(f"INSERT INTO provider_lookups({columns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", values)
         raw_response_path = _clean_text(row["raw_response_path"])
-        if raw_response_path and not Path(raw_response_path).exists():
+        if not omit_paths and raw_response_path and not Path(raw_response_path).exists():
             summary.warnings.append(f"raw provider response file is not available locally: {raw_response_path}")
         summary.provider_lookups_copied += 1
 

@@ -79,6 +79,8 @@ output = "report.json"
     config = load_config(config_path)
 
     update = RuleUpdateService().update(config)
+    unchanged = RuleUpdateService().update(config)
+    assert unchanged.generation == update.generation
     assert update.accepted == 1
     assert update.quarantined == 1
     assert update.cache_path.is_file()

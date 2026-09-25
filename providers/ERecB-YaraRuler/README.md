@@ -17,10 +17,15 @@ Install optional libmagic support with `python -m pip install -e '.[magic]'`.
 ## Use
 
 ```bash
+export ERECB_MODE_PROFILE=/path/to/config/connected.yaml
 yararuler update-rules
 yararuler scan --target-dir ./in --exec-only --output report.json
 yararuler scan --target-dir ./in --all --glob '*.bin' --format csv --output report.csv
 ```
+
+Rule-source synchronization and cache export require the connected profile. Cache activation
+requires the air-gap profile. Set `ERECB_MODE_PROFILE` for the machine or pass
+`--mode-profile PATH` to one command.
 
 Configuration is read from `config.toml`; use `--config PATH` to select another file.
 Logs go to stderr. Use `--output -` to write a report to stdout.

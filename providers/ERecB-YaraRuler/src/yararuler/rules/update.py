@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import platform
 import shutil
@@ -15,11 +16,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from yararuler.config import AppConfig, RuleSource
-from yararuler.errors import RuleBuildError, RuleSyncError
+from yararuler.errors import CacheError, RuleBuildError, RuleSyncError
 from yararuler.models import UpdateSummary
 from yararuler.rules.aggregate import compile_with_isolation
-from yararuler.rules.cache import atomic_write_pointer
+from yararuler.rules.cache import atomic_write_pointer, load_active_cache
 from yararuler.rules.compiler import (
+    INCLUDE_RE,
+    discover_rule_files,
     redact_url,
     sha256_file,
     validate_sources,
@@ -70,6 +73,39 @@ def _extra_sources(urls: list[str], configured: tuple[RuleSource, ...]) -> tuple
     return tuple(sources)
 
 
+def _rule_inputs(sources) -> list[dict]:
+    """Fingerprint only rule files and their transitive includes, not unrelated repo commits."""
+    result = []
+    for source in sources:
+        root = source.path.resolve()
+        seen: dict[str, str] = {}
+
+        def visit(path: Path) -> None:
+            path = path.resolve()
+            if not path.is_relative_to(root):
+                raise RuleBuildError("rule include escapes its source root")
+            relative = path.relative_to(root).as_posix()
+            if relative in seen:
+                return
+            seen[relative] = sha256_file(path)
+            try:
+                content = path.read_text(encoding="utf-8")
+            except UnicodeError:
+                return  # Validation will quarantine the invalid rule.
+            for match in INCLUDE_RE.finditer(content):
+                included = (path.parent / match.group(1)).resolve()
+                if included.is_file() and included.is_relative_to(root):
+                    visit(included)
+                else:
+                    seen[f"invalid-include:{relative}:{match.group(1)}"] = "missing-or-unsafe"
+
+        for path in discover_rule_files(source):
+            visit(path)
+        result.append({"name": source.name, "url": redact_url(source.url), "ref": source.ref,
+                       "files": sorted(seen.items())})
+    return result
+
+
 def _verify_in_fresh_process(path: Path) -> None:
     script = "import sys,yara; yara.load(sys.argv[1])"
     try:
@@ -106,7 +142,6 @@ class RuleUpdateService:
         extra_source_urls: list[str] | None = None,
         force_rebuild: bool = False,
     ) -> UpdateSummary:
-        del force_rebuild  # updates always rebuild from the resolved source commits
         started = time.monotonic()
         generation = str(uuid.uuid4())
         timestamp = utc_now()
@@ -121,6 +156,26 @@ class RuleUpdateService:
 
         with update_lock(config.paths.rules_dir / ".update.lock"):
             synced = synchronize_sources(config, enabled)
+            inputs = {
+                "sources": _rule_inputs(synced),
+                "platform": platform.system(), "machine": platform.machine(),
+                "runtime": yara_runtime(),
+            }
+            build_fingerprint = hashlib.sha256(json.dumps(
+                inputs, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest()
+            if not force_rebuild:
+                try:
+                    active = load_active_cache(cache_dir)
+                except CacheError:
+                    active = None
+                if active is not None and active.manifest.get("build_fingerprint") == build_fingerprint:
+                    counts = active.manifest.get("counts", {})
+                    return UpdateSummary(
+                        generation=active.generation, sources=int(counts.get("sources", 0)),
+                        accepted=int(counts.get("accepted", 0)), quarantined=int(counts.get("quarantined", 0)),
+                        cache_path=active.rules_path,
+                    )
             accepted, rejected = validate_sources(synced)
             staging = cache_dir / f".staging-{generation}"
             quarantine_staging = config.rules.quarantine_dir.parent / f".quarantine-{generation}"
@@ -139,6 +194,7 @@ class RuleUpdateService:
                     "runtime": yara_runtime(),
                     "platform": platform.system(),
                     "machine": platform.machine(),
+                    "build_fingerprint": build_fingerprint,
                     "sources": [
                         {
                             "name": source.name,

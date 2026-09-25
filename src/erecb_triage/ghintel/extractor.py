@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from erecb_triage.config import ghintel_settings
+from erecb_triage.file_scope import executable_candidate
 from erecb_triage.ghintel.normalization import RepositoryIdentity, normalize_repository
 from erecb_triage.processors.base import ProcessorError
 from erecb_triage.staging import regular_reader, safe_name
@@ -105,6 +106,9 @@ def scan_capture(capture: dict, settings: dict, base_dir: Path) -> ExtractionRes
                     if (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns) != (
                             before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns):
                         raise OSError("file changed before reading")
+                    if settings["selector"] == "exec-only" and not executable_candidate(source, reader):
+                        result.metrics["ghintel_files_skipped"] += 1
+                        continue
                     found, size = extract_stream(reader, chunk_size=settings["chunk_size_bytes"],
                                                  max_candidate_bytes=settings["max_candidate_bytes"], max_size=max_size)
                     after = source.lstat()

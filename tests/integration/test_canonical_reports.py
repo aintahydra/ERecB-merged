@@ -68,6 +68,7 @@ class CanonicalReportIntegrationTests(unittest.TestCase):
                 "ip_retriever", "file_retriever"
             ]
             config["processors"]["ip_retriever"]["db_path"] = "./ipintel.sqlite3"
+            config["processors"]["ip_retriever"]["selector"] = "all"
             config["processors"]["file_retriever"]["db_path"] = "./fileintel.sqlite3"
             config["processors"]["file_retriever"]["classifier"] = {
                 "use_magic": False, "extension_fallback": True,

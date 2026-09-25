@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote_from_bytes
 from uuid import uuid4
+from erecb_triage.report_provenance import items as provenance_items
 
 
 def escape(value) -> str:
@@ -96,6 +97,7 @@ def render_report(capture: dict, records: list[dict], metrics: dict[str, int], e
         ("Database availability", database_availability),
         ("Generated at", generated_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")),
     ]
+    summary.extend(provenance_items(capture, "ip_retriever"))
     lines.extend(f"- {label}: {escape(value)}" for label, value in summary)
 
     def table(title: str, headers: list[str], rows: list[list[str]]) -> None:

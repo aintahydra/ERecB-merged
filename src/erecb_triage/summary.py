@@ -9,6 +9,7 @@ from urllib.parse import quote_from_bytes
 from uuid import uuid4
 
 from erecb_triage.ipintel.report import escape
+from erecb_triage.report_provenance import items as provenance_items
 
 
 def render_summary(capture: dict, statuses: list[dict], records: list[dict], *, base_dir: Path,
@@ -26,6 +27,8 @@ def render_summary(capture: dict, statuses: list[dict], records: list[dict], *, 
              f"- Pipeline run ID: {escape(capture['pipeline_run_id'])}",
              f"- Generated at: {escape(generated_at.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z'))}",
              "", "## Adapter Status", "", "| Adapter | State | Report | Notes |", "| --- | --- | --- | --- |"]
+    insert_at = lines.index("## Adapter Status") - 1
+    lines[insert_at:insert_at] = [f"- {label}: {escape(value)}" for label, value in provenance_items(capture)]
     for status in statuses:
         codes = ", ".join(status["error_codes"]) or "None"
         if status["report_current"]:

@@ -1,0 +1,3 @@
+# The root triage command is disabled in connected mode. Use provider CLIs for
+# request import, homework runs, database snapshots and YARA rule updates.
+mode: connected

@@ -36,6 +36,11 @@ class Database:
             raise
 
     def initialize(self) -> None:
+        from .merge import validate_ip_db
+
+        if self.conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").fetchone():
+            validate_ip_db(self.conn)
+            return
         with self.transaction() as conn:
             conn.executescript(SCHEMA)
             conn.execute(

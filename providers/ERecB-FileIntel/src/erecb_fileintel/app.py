@@ -62,6 +62,7 @@ def merge_db(
     backup: bool = False,
     dry_run: bool = False,
     conflict_policy: str = "warn",
+    intelligence_only: bool = False,
 ) -> MergeSummary:
     return merge_databases(
         source_path,
@@ -69,4 +70,5 @@ def merge_db(
         backup=backup,
         dry_run=dry_run,
         conflict_policy=conflict_policy,
+        intelligence_only=intelligence_only,
     )

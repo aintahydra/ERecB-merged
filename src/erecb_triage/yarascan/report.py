@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from erecb_triage.ghintel.report import escape
+from erecb_triage.report_provenance import items as provenance_items
 
 
 def render_report(capture: dict, records: list[dict], metrics: dict[str, int], errors: list, *, cache_generation: str | None,
@@ -21,6 +22,7 @@ def render_report(capture: dict, records: list[dict], metrics: dict[str, int], e
                ("Files selected", metrics.get("yara_files_selected", 0)), ("Files scanned", metrics.get("yara_files_scanned", 0)),
                ("Matched files", metrics.get("yara_files_matched", 0)), ("Rule matches", len(records)),
                ("Generated at", generated_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"))]
+    summary.extend(provenance_items(capture))
     lines.extend(f"- {label}: {escape(value)}" for label, value in summary)
     lines.extend(["", "## Matched Files", "", "| File | SHA-256 | MD5 | Rules | Tags |", "| --- | --- | --- | --- | --- |"])
     grouped = {}
