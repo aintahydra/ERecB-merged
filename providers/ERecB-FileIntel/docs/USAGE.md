@@ -27,7 +27,9 @@ The default API key path is:
 ctx_io_api_key.txt
 ```
 
-The API key file should contain only the key value.
+The API key file should contain only the key value. Request imports do not query CTX.IO and do
+not require this file. `homework run` checks the key before leasing any requests; alternatively
+set `CTX_IO_API_KEY` in the connected machine's environment.
 
 ## Initialize Database
 

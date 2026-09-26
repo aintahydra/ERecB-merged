@@ -76,6 +76,13 @@ class EnrichmentService:
             return "not_found"
         return "error"
 
+    def validate_credentials(self) -> None:
+        """Fail before queue leasing if any enabled provider is not configured."""
+        for provider in self.providers:
+            validate = getattr(provider, "validate_credentials", None)
+            if validate is not None:
+                validate()
+
     def _lookup_file(self, file: FileForEnrichment, provider: IntelligenceProvider) -> int:
         query_hash, query_hash_type = self._choose_query_hash(file, provider)
         lookup_id = self.repository.create_provider_lookup(file.id, provider.name, query_hash, query_hash_type)

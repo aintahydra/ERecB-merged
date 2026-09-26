@@ -1,23 +1,79 @@
 from __future__ import annotations
 
 import sqlite3
+import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from contextlib import redirect_stdout
+import uuid
 
+from erecb_fileintel.config import CtxIoConfig, EnrichmentConfig, load_config
+from erecb_fileintel.cli import main as fileintel_main
 from erecb_fileintel.db.migrations import initialize_schema
 from erecb_fileintel.db.merge import merge_databases
 from erecb_fileintel.db.repository import Repository
 from erecb_fileintel.enrichment.merge import merge_malicious
-from erecb_fileintel.errors import DatabaseError
+from erecb_fileintel.errors import DatabaseError, ProviderAuthError
 from erecb_fileintel.enrichment.providers.ctx_io import CtxIoProvider
 from erecb_fileintel.models import FileObservation, NormalizedIntel
 from erecb_fileintel.scan.executable_rules import executable_reason
 from erecb_fileintel.scan.hashing import hash_file
 from erecb_fileintel.watcher.detector import detect_watch_targets
+from erecb_triage.exchange import new_bundle, write_bundle
 
 
 class CoreTests(unittest.TestCase):
+    def test_request_config_load_does_not_require_ctx_io_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"CTX_IO_API_KEY": ""}):
+            root = Path(tmp)
+            config_path = root / "config.yaml"
+            config_path.write_text(
+                f"database_path: {root / 'dbs' / 'fileintel.sqlite3'}\n"
+                f"providers:\n  ctx_io:\n    api_key_path: {root / 'missing-key.txt'}\n",
+                encoding="utf-8",
+            )
+            config = load_config(config_path)
+            provider = CtxIoProvider(config.providers.ctx_io, config.enrichment)
+            with self.assertRaisesRegex(ProviderAuthError, "CTX.IO API key is not configured"):
+                provider.validate_credentials()
+
+    def test_request_import_succeeds_without_ctx_io_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"CTX_IO_API_KEY": ""}):
+            root = Path(tmp)
+            config_path = root / "config.yaml"
+            config_path.write_text(
+                f"database_path: {root / 'dbs' / 'fileintel.sqlite3'}\n"
+                f"providers:\n  ctx_io:\n    api_key_path: {root / 'missing-key.txt'}\n",
+                encoding="utf-8",
+            )
+            bundle = new_bundle(
+                source_instance_id=str(uuid.uuid4()), source_sequence=1, selection="missing",
+                policy_sha256="0" * 64, files=[{"sha256": "a" * 64, "md5": None}],
+                ips=[], repositories=[],
+            )
+            bundle_path = root / "requests.json"
+            write_bundle(bundle_path, bundle)
+            profile = Path(__file__).resolve().parents[3] / "config" / "connected.yaml"
+            output = io.StringIO()
+            with redirect_stdout(output):
+                result = fileintel_main([
+                    "--config", str(config_path), "--mode-profile", str(profile),
+                    "requests", "import", str(bundle_path),
+                ])
+            self.assertEqual(result, 0)
+            self.assertTrue(json.loads(output.getvalue())["imported"])
+
+    def test_ctx_io_reads_key_from_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"CTX_IO_API_KEY": "test-key"}):
+            provider = CtxIoProvider(
+                CtxIoConfig(Path(tmp) / "missing", "https://api.ctx.io/v1"),
+                EnrichmentConfig((), 30, 1, False, Path(tmp), None, 24),
+            )
+            provider.validate_credentials()
+
     def test_executable_rules_use_magic_then_extension(self) -> None:
         self.assertEqual(executable_reason(Path("sample.bin"), "PE32 executable"), "magic: pe32")
         self.assertEqual(executable_reason(Path("run.ps1"), "ASCII text"), "extension fallback: .ps1")

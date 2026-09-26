@@ -144,9 +144,6 @@ def validate_config(config: AppConfig) -> None:
     unknown = set(config.enrichment.enabled_providers) - known
     if unknown:
         raise ConfigError(f"unknown provider(s): {', '.join(sorted(unknown))}")
-    if "ctx_io" in config.enrichment.enabled_providers and not config.providers.ctx_io.api_key_path.exists():
-        raise ConfigError(f"CTX.IO API key file does not exist: {config.providers.ctx_io.api_key_path}")
-
     config.database_path.parent.mkdir(parents=True, exist_ok=True)
     if config.enrichment.store_raw_responses:
         config.enrichment.raw_response_dir.mkdir(parents=True, exist_ok=True)

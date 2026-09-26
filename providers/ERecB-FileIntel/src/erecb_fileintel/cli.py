@@ -91,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
                                      indent=2, sort_keys=True))
                     return 0
                 context = app.build_context(args.config)
+                context.enrichment_service.validate_credentials()
                 processed = []
                 try:
                     for item in queue.lease(limit=args.limit):

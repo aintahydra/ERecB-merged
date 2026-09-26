@@ -90,6 +90,9 @@ The default database path is `dbs/fileintel.sqlite3`. Repeating `init-db` valida
 
 ## Enable CTX.IO Enrichment
 
+Only `homework run` and enrichment scans need credentials. Importing request bundles is offline
+and key-free. The key can come from `CTX_IO_API_KEY` or a local file:
+
 Create a key file containing only the CTX.IO key and restrict its permissions:
 
 ```bash

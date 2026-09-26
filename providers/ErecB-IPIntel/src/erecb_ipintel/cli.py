@@ -12,7 +12,7 @@ from erecb_triage.mode import ModeError
 from .config import load_config
 from .db import Database
 from .discovery import discover
-from .enrich import enrich_file, enrich_ip
+from .enrich import enabled_providers, enrich_file, enrich_ip
 from .output_writer import write_ip_tuples
 from .progress import PercentageProgress
 from .scanner import scan_directory
@@ -124,6 +124,11 @@ def run_homework_command(args: argparse.Namespace, config) -> int:
             print(json.dumps({"pause_until": queue.pause_until(), "items": queue.list_items()},
                              indent=2, sort_keys=True))
             return 0
+        providers = enabled_providers(config)
+        if not providers:
+            raise ValueError("no intelligence providers are enabled")
+        for provider in providers:
+            provider.validate_credentials()
         db = Database(config.paths.db_path)
         db.initialize()
         processed = []

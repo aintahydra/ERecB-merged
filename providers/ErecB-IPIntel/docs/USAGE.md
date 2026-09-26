@@ -198,7 +198,7 @@ erecb-ipintel enrich-ip 8.8.8.8 --provider ctx_io
 
 `ModuleNotFoundError: erecb_ipintel` means the package is not installed in the active Python environment. Activate the intended virtual environment and reinstall the wheel or source tree.
 
-`CredentialError: CTX.IO API key is not configured` means no key was found in config, `CTX_IO_API_KEY`, or `ctx_io_api_key.txt`.
+`CredentialError: CTX.IO API key is not configured` means no key was found in config, `CTX_IO_API_KEY`, or `ctx_io_api_key.txt`. `homework run` checks the key before leasing work; `requests import` remains offline and key-free.
 
 A scan that writes zero tuples may still be correct if all detected addresses are invalid, embedded in larger tokens, or part of the extraction whitelist.
 

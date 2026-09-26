@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,14 @@ class CtxIoProvider(IntelligenceProvider):
         self.enrichment_config = enrichment_config
         self.api_key = self._read_api_key(config.api_key_path)
 
+    def validate_credentials(self) -> None:
+        if not self.api_key:
+            raise ProviderAuthError(
+                "CTX.IO API key is not configured; set CTX_IO_API_KEY or provide the configured key file"
+            )
+
     def lookup(self, hash_value: str, hash_type: str) -> dict[str, Any]:
+        self.validate_credentials()
         if hash_type not in self.supported_hash_types:
             raise ProviderError("provider_error", f"unsupported hash type for CTX.IO: {hash_type}")
 
@@ -131,6 +139,12 @@ class CtxIoProvider(IntelligenceProvider):
         )
 
     @staticmethod
-    def _read_api_key(path: Path) -> str:
-        return path.read_text(encoding="utf-8").strip()
-
+    def _read_api_key(path: Path) -> str | None:
+        value = os.environ.get("CTX_IO_API_KEY")
+        if value and value.strip():
+            return value.strip()
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        return value or None

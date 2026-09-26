@@ -15,7 +15,9 @@ Scanning, exchange queue operations, and database snapshots require the connecte
 database merges require the air-gap profile. Use `--mode-profile PATH` to select a profile
 for an individual command.
 
-The first provider implementation is CTX.IO. Put the CTX.IO API key path in the config; the default is `ctx_io_api_key.txt`.
+The first provider implementation is CTX.IO. Request-bundle imports are offline and do not need
+credentials. `homework run` requires CTX.IO credentials, read from `CTX_IO_API_KEY` or the
+configured key file (default `ctx_io_api_key.txt`).
 
 ## Documentation
 
